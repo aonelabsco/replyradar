@@ -14,17 +14,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'tweetText is required' }, { status: 400 });
   }
 
-  // Fetch style examples from the library
-  const db = getDb();
-  const snap = await db.collection('myContent').orderBy('createdAt', 'desc').limit(30).get();
-  const examples = snap.docs.map((doc) => {
-    const d = doc.data();
-    return `[${d.type}] ${d.content as string}`;
-  });
-
-  const styleContext = examples.length > 0
-    ? examples.join('\n\n')
-    : 'No style examples available yet — use your natural voice.';
+  // Fetch style examples from the library (non-fatal if Firestore fails)
+  let styleContext = 'No style examples available yet — use your natural voice.';
+  try {
+    const db = getDb();
+    const snap = await db.collection('myContent').orderBy('createdAt', 'desc').limit(30).get();
+    if (!snap.empty) {
+      styleContext = snap.docs
+        .map((doc) => {
+          const d = doc.data();
+          return `[${d.type}] ${d.content as string}`;
+        })
+        .join('\n\n');
+    }
+  } catch (dbErr) {
+    console.error('Firestore fetch error:', dbErr);
+  }
 
   const systemPrompt = `You are a ghostwriter who crafts tweet replies in the exact voice and style of the user based on their past writing samples.
 
@@ -45,8 +50,7 @@ Rules:
   try {
     const message = await client.messages.create({
       model: 'claude-opus-4-7',
-      max_tokens: 1024,
-      thinking: { type: 'adaptive' },
+      max_tokens: 4096,
       system: [
         {
           type: 'text',
@@ -72,7 +76,8 @@ Rules:
 
     return NextResponse.json({ replies });
   } catch (err) {
-    console.error('Claude API error:', err);
-    return NextResponse.json({ error: 'AI generation failed' }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Claude API error:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
