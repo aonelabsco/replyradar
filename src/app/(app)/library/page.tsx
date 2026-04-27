@@ -1,5 +1,6 @@
 import { getDb } from '@/lib/firebase';
 import AddContentForm from './AddContentForm';
+import ImportCsvButton from './ImportCsvButton';
 import DeleteButton from './DeleteButton';
 
 export const dynamic = 'force-dynamic';
@@ -46,7 +47,10 @@ export default async function LibraryPage() {
         </p>
       </div>
 
-      <AddContentForm />
+      <div className="flex flex-wrap gap-0">
+        <AddContentForm />
+        <ImportCsvButton />
+      </div>
 
       {items.length === 0 ? (
         <p className="text-sm text-gray-300">No content yet — add your first item above.</p>
