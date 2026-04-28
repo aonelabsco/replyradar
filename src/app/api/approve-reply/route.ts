@@ -29,16 +29,6 @@ export async function POST(request: NextRequest) {
     createdAt: now,
   });
 
-  // Only learn from replies that were actually used (approved or edited)
-  if (resolvedStatus !== 'rejected') {
-    await db.collection('myContent').add({
-      type: 'tweet',
-      content: reply.trim(),
-      url: null,
-      createdAt: now,
-    });
-  }
-
   return NextResponse.json({ ok: true });
 }
 
