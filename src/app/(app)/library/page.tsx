@@ -26,6 +26,12 @@ interface Decision {
   createdAt: string;
 }
 
+async function getContentCount(): Promise<number> {
+  const db = getDb();
+  const snap = await db.collection('myContent').count().get();
+  return snap.data().count;
+}
+
 async function getContent(): Promise<ContentItem[]> {
   const db = getDb();
   const snap = await db.collection('myContent').orderBy('createdAt', 'desc').limit(200).get();
@@ -93,9 +99,10 @@ export default async function LibraryPage({
   const { tab } = await searchParams;
   const activeTab = tab === 'decisions' ? 'decisions' : 'library';
 
-  const [items, decisions] = await Promise.all([
+  const [items, decisions, totalCount] = await Promise.all([
     getContent(),
     getDecisions(),
+    getContentCount(),
   ]);
 
   const topCount = items.filter((i) => i.topExample).length;
@@ -120,7 +127,7 @@ export default async function LibraryPage({
           }`}
         >
           Library
-          <span className="ml-1.5 text-xs text-gray-300">{items.length}</span>
+          <span className="ml-1.5 text-xs text-gray-300">{totalCount}</span>
         </Link>
         <Link
           href="/library?tab=decisions"
