@@ -41,8 +41,10 @@ function QuickPageInner() {
   }, []);
 
   // Auto-generate when arriving from the bookmarklet (?text=...)
+  // Read directly from window.location.search — more reliable than useSearchParams in useEffect
   useEffect(() => {
-    const text = params.get('text')?.trim();
+    const urlParams = new URLSearchParams(window.location.search);
+    const text = urlParams.get('text')?.trim();
     if (text) {
       setTweetText(text);
       runGenerate(text);
@@ -279,20 +281,21 @@ function BookmarkletTip() {
   const [show, setShow] = useState(false);
   const linkRef = useRef<HTMLAnchorElement>(null);
 
+  // Runs whenever `show` flips to true — that's when the <a> is actually in the DOM.
+  // Empty-deps would run before the conditional renders the element.
   useEffect(() => {
-    if (!linkRef.current) return;
+    if (!show || !linkRef.current) return;
     const appUrl = window.location.origin;
-    // Use location.href (not window.open) to avoid popup blockers.
-    // Falls back to window.getSelection() if the data-testid selector misses.
     const code = `javascript:(function(){` +
-      `var el=document.querySelector('[data-testid="tweetText"]');` +
-      `var text=el?el.innerText.trim():window.getSelection().toString().trim();` +
-      `if(!text){alert('No tweet text found. Try selecting the tweet text first, then clicking the bookmarklet.');return;}` +
+      `var els=document.querySelectorAll('[data-testid="tweetText"]');` +
+      `var text='';` +
+      `for(var i=0;i<els.length;i++){var t=els[i].innerText.trim();if(t.length>text.length)text=t;}` +
+      `if(!text)text=window.getSelection().toString().trim();` +
+      `if(!text){alert('Could not find tweet text. Select the tweet text manually then click the bookmarklet.');return;}` +
       `window.location.href='${appUrl}/quick?text='+encodeURIComponent(text);` +
       `})();`;
-    // Set via DOM to bypass React's javascript: href sanitization
     linkRef.current.setAttribute('href', code);
-  }, []);
+  }, [show]);
 
   return (
     <div className="mt-10 pt-8 border-t border-gray-100">
