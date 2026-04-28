@@ -286,12 +286,30 @@ function BookmarkletTip() {
   useEffect(() => {
     if (!show || !linkRef.current) return;
     const appUrl = window.location.origin;
+    // Use the page URL (x.com/<username>/status/<id>) to find the right article,
+    // not the longest text (replies can be longer than the main tweet).
     const code = `javascript:(function(){` +
-      `var els=document.querySelectorAll('[data-testid="tweetText"]');` +
       `var text='';` +
-      `for(var i=0;i<els.length;i++){var t=els[i].innerText.trim();if(t.length>text.length)text=t;}` +
+      `try{` +
+        `var parts=window.location.pathname.split('/');` +
+        `if(parts[2]==='status'){` +
+          `var uname='/'+parts[1].toLowerCase();` +
+          `var arts=document.querySelectorAll('article');` +
+          `for(var i=0;i<arts.length;i++){` +
+            `var links=arts[i].querySelectorAll('a[href]');` +
+            `var found=false;` +
+            `for(var j=0;j<links.length;j++){` +
+              `try{if(new URL(links[j].href).pathname.toLowerCase()===uname){found=true;break;}}catch(e){}` +
+            `}` +
+            `if(found){` +
+              `var el=arts[i].querySelector('[data-testid="tweetText"]');` +
+              `if(el){text=el.innerText.trim();break;}` +
+            `}` +
+          `}` +
+        `}` +
+      `}catch(e){}` +
       `if(!text)text=window.getSelection().toString().trim();` +
-      `if(!text){alert('Could not find tweet text. Select the tweet text manually then click the bookmarklet.');return;}` +
+      `if(!text){alert('Could not detect tweet. Open the tweet detail page (click the tweet so the URL is x.com/user/status/ID), then try again.');return;}` +
       `window.location.href='${appUrl}/quick?text='+encodeURIComponent(text);` +
       `})();`;
     linkRef.current.setAttribute('href', code);
