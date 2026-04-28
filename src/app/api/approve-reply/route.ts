@@ -7,12 +7,13 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
 
-  const { originalTweet, reply, edited, originalReply, status } = body as {
+  const { originalTweet, reply, edited, originalReply, status, tweetUrl } = body as {
     originalTweet?: string;
     reply?: string;
     edited?: boolean;
     originalReply?: string;
     status?: 'approved' | 'edited' | 'rejected';
+    tweetUrl?: string;
   };
 
   if (!reply?.trim()) return NextResponse.json({ error: 'reply is required' }, { status: 400 });
@@ -26,6 +27,7 @@ export async function POST(request: NextRequest) {
     reply: reply.trim(),
     status: resolvedStatus,
     originalReply: resolvedStatus === 'edited' ? (originalReply?.trim() ?? '') : null,
+    tweetUrl: tweetUrl?.trim() ?? null,
     createdAt: now,
   });
 
@@ -48,6 +50,7 @@ export async function GET() {
       originalTweet: d.originalTweet as string,
       reply: d.reply as string,
       status,
+      tweetUrl: (d.tweetUrl as string | null) ?? null,
       createdAt: d.createdAt?.toDate().toLocaleDateString('en-US', {
         month: 'short', day: 'numeric',
       }) ?? '—',

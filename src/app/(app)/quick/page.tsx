@@ -9,7 +9,8 @@ interface ApprovedItem {
   id: string;
   originalTweet: string;
   reply: string;
-  edited: boolean;
+  status: string;
+  tweetUrl: string | null;
   createdAt: string;
 }
 
@@ -25,8 +26,10 @@ function QuickPageInner() {
   const params = useSearchParams();
 
   const [tweetText, setTweetText] = useState('');
+  const [tweetUrl, setTweetUrl] = useState('');
   const [stage, setStage] = useState<Stage>('idle');
   const [generatedReply, setGeneratedReply] = useState('');
+  const [rejectedReplies, setRejectedReplies] = useState<string[]>([]);
   const [editText, setEditText] = useState('');
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -40,26 +43,27 @@ function QuickPageInner() {
       .catch(() => {});
   }, []);
 
-  // Auto-generate when arriving from the bookmarklet (?text=...)
-  // Read directly from window.location.search — more reliable than useSearchParams in useEffect
+  // Auto-generate when arriving from the bookmarklet (?text=...&tweetUrl=...)
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const text = urlParams.get('text')?.trim();
+    const url = urlParams.get('tweetUrl')?.trim();
+    if (url) setTweetUrl(url);
     if (text) {
       setTweetText(text);
-      runGenerate(text);
+      runGenerate(text, []);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function runGenerate(text: string) {
+  async function runGenerate(text: string, rejected: string[]) {
     setError('');
     setStage('loading');
     try {
       const res = await fetch('/api/generate-reply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tweetText: text }),
+        body: JSON.stringify({ tweetText: text, rejectedReplies: rejected }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? 'Generation failed'); setStage('idle'); return; }
@@ -74,7 +78,7 @@ function QuickPageInner() {
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     if (!tweetText.trim()) return;
-    await runGenerate(tweetText);
+    await runGenerate(tweetText, rejectedReplies);
   }
 
   async function handleApprove(replyToSave: string, wasEdited = false) {
@@ -86,17 +90,19 @@ function QuickPageInner() {
         reply: replyToSave,
         edited: wasEdited,
         originalReply: wasEdited ? generatedReply : undefined,
+        tweetUrl: tweetUrl || undefined,
       }),
     }).catch(() => {});
     setGeneratedReply(replyToSave);
     setStage('approved');
     setHistory((prev) => [
-      { id: Date.now().toString(), originalTweet: tweetText, reply: replyToSave, edited: wasEdited, createdAt: 'just now' },
+      { id: Date.now().toString(), originalTweet: tweetText, reply: replyToSave, status: wasEdited ? 'edited' : 'approved', tweetUrl: tweetUrl || null, createdAt: 'just now' },
       ...prev.slice(0, 9),
     ]);
   }
 
   async function handleReject() {
+    const rejected = [...rejectedReplies, generatedReply];
     await fetch('/api/approve-reply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,10 +110,12 @@ function QuickPageInner() {
         originalTweet: tweetText,
         reply: generatedReply,
         status: 'rejected',
+        tweetUrl: tweetUrl || undefined,
       }),
     }).catch(() => {});
-    setGeneratedReply('');
-    setStage('idle');
+    setRejectedReplies(rejected);
+    // Immediately try again with the rejected reply as context
+    await runGenerate(tweetText, rejected);
   }
 
   function handleEdit() {
@@ -129,7 +137,9 @@ function QuickPageInner() {
 
   function handleAnother() {
     setTweetText('');
+    setTweetUrl('');
     setGeneratedReply('');
+    setRejectedReplies([]);
     setEditText('');
     setError('');
     setStage('idle');
@@ -163,6 +173,13 @@ function QuickPageInner() {
             />
           </div>
 
+          {tweetUrl && (
+            <a href={tweetUrl} target="_blank" rel="noopener noreferrer"
+              className="text-xs text-gray-400 hover:text-amber-500 transition-colors truncate -mt-2">
+              ↗ {tweetUrl}
+            </a>
+          )}
+
           {error && <p className="text-sm text-red-500">{error}</p>}
 
           {stage === 'idle' && (
@@ -171,12 +188,14 @@ function QuickPageInner() {
               disabled={!tweetText.trim()}
               className="self-start px-4 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
             >
-              Generate reply
+              {rejectedReplies.length > 0 ? 'Try another' : 'Generate reply'}
             </button>
           )}
 
           {stage === 'loading' && (
-            <p className="text-sm text-gray-400 animate-pulse">Generating...</p>
+            <p className="text-sm text-gray-400 animate-pulse">
+              {rejectedReplies.length > 0 ? 'Generating a fresh option...' : 'Generating...'}
+            </p>
           )}
         </form>
       )}
@@ -184,7 +203,12 @@ function QuickPageInner() {
       {/* Review stage */}
       {stage === 'review' && (
         <div className="mb-8">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Generated reply</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide">Generated reply</p>
+            {rejectedReplies.length > 0 && (
+              <p className="text-xs text-gray-300">{rejectedReplies.length} rejected</p>
+            )}
+          </div>
           <div className="p-4 border border-gray-200 rounded-xl bg-white mb-4">
             <p className="text-sm text-[#2B2B2B] whitespace-pre-wrap">{generatedReply}</p>
             <p className="text-xs text-gray-300 mt-2">{generatedReply.length}/280</p>
@@ -206,7 +230,7 @@ function QuickPageInner() {
               onClick={handleReject}
               className="px-4 py-2 text-sm text-gray-400 hover:text-red-400 transition-colors"
             >
-              Reject
+              Reject & try again
             </button>
           </div>
         </div>
@@ -258,7 +282,13 @@ function QuickPageInner() {
               </button>
             </div>
           </div>
-          <p className="text-xs text-gray-400 mb-4">Reply saved to your library — it'll improve future suggestions.</p>
+          {tweetUrl && (
+            <a href={tweetUrl} target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-amber-500 hover:text-amber-600 transition-colors mb-3 block">
+              ↗ Go back to tweet to post your reply
+            </a>
+          )}
+          <p className="text-xs text-gray-400 mb-4">Reply saved — it'll improve future suggestions.</p>
           <button
             onClick={handleAnother}
             className="px-4 py-2 border border-gray-200 hover:border-gray-300 text-[#2B2B2B] text-sm font-medium rounded-lg transition-colors"
@@ -290,13 +320,9 @@ function BookmarkletTip() {
   const [show, setShow] = useState(false);
   const linkRef = useRef<HTMLAnchorElement>(null);
 
-  // Runs whenever `show` flips to true — that's when the <a> is actually in the DOM.
-  // Empty-deps would run before the conditional renders the element.
   useEffect(() => {
     if (!show || !linkRef.current) return;
     const appUrl = window.location.origin;
-    // Use the page URL (x.com/<username>/status/<id>) to find the right article,
-    // not the longest text (replies can be longer than the main tweet).
     const code = `javascript:(function(){` +
       `var text='';` +
       `try{` +
@@ -319,7 +345,7 @@ function BookmarkletTip() {
       `}catch(e){}` +
       `if(!text)text=window.getSelection().toString().trim();` +
       `if(!text){alert('Could not detect tweet. Open the tweet detail page (click the tweet so the URL is x.com/user/status/ID), then try again.');return;}` +
-      `window.location.href='${appUrl}/quick?text='+encodeURIComponent(text);` +
+      `window.open('${appUrl}/quick?text='+encodeURIComponent(text)+'&tweetUrl='+encodeURIComponent(window.location.href),'_blank');` +
       `})();`;
     linkRef.current.setAttribute('href', code);
   }, [show]);
@@ -336,7 +362,7 @@ function BookmarkletTip() {
         <div className="mt-3 p-4 border border-gray-100 rounded-xl bg-gray-50">
           <p className="text-sm text-[#2B2B2B] font-medium mb-1">Browser bookmarklet</p>
           <p className="text-xs text-gray-400 mb-3">
-            Drag the button below to your bookmarks bar. On any tweet page on X, click it — this page opens with the tweet already filled in.
+            Drag the button below to your bookmarks bar. On any tweet page on X, click it — ReplyRadar opens in a new tab with the tweet already filled in, so you don&apos;t lose your place.
             <br />
             <span className="text-gray-300">If it doesn't detect the tweet, select the tweet text first, then click the bookmarklet.</span>
           </p>
@@ -373,7 +399,7 @@ function RecentReply({ item }: { item: ApprovedItem }) {
       <div className="flex items-start justify-between gap-3">
         <p className="text-sm text-[#2B2B2B]">{item.reply}</p>
         <div className="flex items-center gap-2 shrink-0">
-          {item.edited && (
+          {item.status === 'edited' && (
             <span className="text-xs text-amber-500">edited</span>
           )}
           <span className="text-xs text-gray-300">{item.createdAt}</span>
@@ -385,6 +411,12 @@ function RecentReply({ item }: { item: ApprovedItem }) {
           </button>
         </div>
       </div>
+      {item.tweetUrl && (
+        <a href={item.tweetUrl} target="_blank" rel="noopener noreferrer"
+          className="text-xs text-gray-300 hover:text-amber-500 transition-colors mt-1 block truncate">
+          ↗ {item.tweetUrl}
+        </a>
+      )}
     </div>
   );
 }
