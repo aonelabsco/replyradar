@@ -263,10 +263,22 @@ function QuickPageInner() {
 
 function BookmarkletTip() {
   const [show, setShow] = useState(false);
-  // The bookmarklet grabs the tweet text from an open X.com tweet page
-  // and redirects to /quick with it pre-filled via ?text= param
-  const appUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const bookmarklet = `javascript:(function(){var el=document.querySelector('[data-testid="tweetText"]');var text=el?el.innerText:'';var url=window.location.href;if(!text){alert('No tweet text found on this page.');return;}window.open('${appUrl}/quick?text='+encodeURIComponent(text)+'&src='+encodeURIComponent(url),'_blank');})();`;
+  const linkRef = useRef<HTMLAnchorElement>(null);
+
+  useEffect(() => {
+    if (!linkRef.current) return;
+    const appUrl = window.location.origin;
+    // Use location.href (not window.open) to avoid popup blockers.
+    // Falls back to window.getSelection() if the data-testid selector misses.
+    const code = `javascript:(function(){` +
+      `var el=document.querySelector('[data-testid="tweetText"]');` +
+      `var text=el?el.innerText.trim():window.getSelection().toString().trim();` +
+      `if(!text){alert('No tweet text found. Try selecting the tweet text first, then clicking the bookmarklet.');return;}` +
+      `window.location.href='${appUrl}/quick?text='+encodeURIComponent(text);` +
+      `})();`;
+    // Set via DOM to bypass React's javascript: href sanitization
+    linkRef.current.setAttribute('href', code);
+  }, []);
 
   return (
     <div className="mt-10 pt-8 border-t border-gray-100">
@@ -280,17 +292,20 @@ function BookmarkletTip() {
         <div className="mt-3 p-4 border border-gray-100 rounded-xl bg-gray-50">
           <p className="text-sm text-[#2B2B2B] font-medium mb-1">Browser bookmarklet</p>
           <p className="text-xs text-gray-400 mb-3">
-            Drag the button below to your browser bookmarks bar. Then, when you're on any tweet page on X, click the bookmark — it'll open this page with the tweet pre-filled.
+            Drag the button below to your bookmarks bar. On any tweet page on X, click it — this page opens with the tweet already filled in.
+            <br />
+            <span className="text-gray-300">If it doesn't detect the tweet, select the tweet text first, then click the bookmarklet.</span>
           </p>
           <a
-            href={bookmarklet}
+            ref={linkRef}
+            href="#"
             onClick={(e) => e.preventDefault()}
             draggable
             className="inline-block px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded-lg cursor-grab active:cursor-grabbing select-none"
           >
-            Reply with ReplyRadar
+            ↩ Reply with ReplyRadar
           </a>
-          <p className="text-xs text-gray-300 mt-2">Drag this button to your bookmarks bar — don't click it here.</p>
+          <p className="text-xs text-gray-300 mt-2">Drag to your bookmarks bar — clicking here does nothing.</p>
         </div>
       )}
     </div>
