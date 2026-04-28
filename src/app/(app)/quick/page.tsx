@@ -24,7 +24,7 @@ export default function QuickPage() {
 function QuickPageInner() {
   const params = useSearchParams();
 
-  const [tweetText, setTweetText] = useState(params.get('text') ?? '');
+  const [tweetText, setTweetText] = useState('');
   const [stage, setStage] = useState<Stage>('idle');
   const [generatedReply, setGeneratedReply] = useState('');
   const [editText, setEditText] = useState('');
@@ -40,16 +40,24 @@ function QuickPageInner() {
       .catch(() => {});
   }, []);
 
-  async function handleGenerate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!tweetText.trim()) return;
+  // Auto-generate when arriving from the bookmarklet (?text=...)
+  useEffect(() => {
+    const text = params.get('text')?.trim();
+    if (text) {
+      setTweetText(text);
+      runGenerate(text);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function runGenerate(text: string) {
     setError('');
     setStage('loading');
     try {
       const res = await fetch('/api/generate-reply', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tweetText }),
+        body: JSON.stringify({ tweetText: text }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? 'Generation failed'); setStage('idle'); return; }
@@ -59,6 +67,12 @@ function QuickPageInner() {
       setError('Network error');
       setStage('idle');
     }
+  }
+
+  async function handleGenerate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tweetText.trim()) return;
+    await runGenerate(tweetText);
   }
 
   async function handleApprove(replyToSave: string, wasEdited = false) {
