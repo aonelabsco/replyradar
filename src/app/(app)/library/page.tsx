@@ -22,6 +22,7 @@ interface Decision {
   reply: string;
   status: 'approved' | 'edited' | 'rejected';
   originalReply: string | null;
+  tweetUrl: string | null;
   createdAt: string;
 }
 
@@ -56,6 +57,7 @@ async function getDecisions(): Promise<Decision[]> {
       reply: d.reply as string,
       status: status as Decision['status'],
       originalReply: (d.originalReply as string | null) ?? null,
+      tweetUrl: (d.tweetUrl as string | null) ?? null,
       createdAt: d.createdAt?.toDate().toLocaleDateString('en-US', {
         month: 'short', day: 'numeric', year: 'numeric',
       }) ?? '—',
@@ -248,6 +250,12 @@ export default async function LibraryPage({
                         {s.text}
                       </span>
                       <span className="text-xs text-gray-300">{d.createdAt}</span>
+                      {d.tweetUrl && (
+                        <a href={d.tweetUrl} target="_blank" rel="noopener noreferrer"
+                          className="text-xs text-gray-300 hover:text-amber-500 transition-colors ml-1">
+                          ↗ tweet
+                        </a>
+                      )}
                     </div>
                   </div>
                 );

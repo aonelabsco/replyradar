@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
 
-  const { tweetText } = body as { tweetText?: string };
+  const { tweetText, rejectedReplies } = body as { tweetText?: string; rejectedReplies?: string[] };
   if (!tweetText?.trim()) {
     return NextResponse.json({ error: 'tweetText is required' }, { status: 400 });
   }
@@ -100,7 +100,9 @@ Write exactly ONE reply. Output only the reply text — no quotes around it, no 
       messages: [
         {
           role: 'user',
-          content: `Write a reply for this tweet:\n\n${tweetText.trim()}`,
+          content: rejectedReplies && rejectedReplies.length > 0
+            ? `Write a reply for this tweet:\n\n${tweetText.trim()}\n\nPreviously rejected — do not repeat or be similar to these:\n${rejectedReplies.map((r) => `- "${r}"`).join('\n')}`
+            : `Write a reply for this tweet:\n\n${tweetText.trim()}`,
         },
       ],
     });
