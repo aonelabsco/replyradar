@@ -13,22 +13,51 @@ interface CsvRow {
   engagements: number;
 }
 
-function parseTsv(raw: string): CsvRow[] {
-  const lines = raw.split('\n');
+// Parse a single CSV line respecting quoted fields
+function splitCsvLine(line: string): string[] {
+  const cols: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      cols.push(cur); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  cols.push(cur);
+  return cols;
+}
+
+function parseFile(raw: string): CsvRow[] {
+  // Strip UTF-8 BOM, normalize all line endings to \n
+  const normalized = raw.replace(/^﻿/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const lines = normalized.split('\n').filter((l) => l.trim());
+  if (lines.length < 2) return [];
+
+  // Auto-detect separator from the header row
+  const header = lines[0];
+  const sep = header.includes('\t') ? 'tab' : 'comma';
+
   const results: CsvRow[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split('\t');
+    const cols = sep === 'tab' ? lines[i].split('\t') : splitCsvLine(lines[i]);
     if (cols.length < 7) continue;
 
-    const postId = cols[0].trim();
-    const text = cols[2].trim();
-    const link = cols[3].trim();
+    const postId = cols[0].trim().replace(/^"(.*)"$/, '$1');
+    const text = cols[2].trim().replace(/^"(.*)"$/, '$1');
+    const link = cols[3].trim().replace(/^"(.*)"$/, '$1');
     const likes = parseInt(cols[5], 10) || 0;
     const engagements = parseInt(cols[6], 10) || 0;
 
-    if (!postId || link.includes('/undefined')) continue;
-    if (!text || PURE_URL_RE.test(text)) continue;
+    if (!postId || !text) continue;
+    if (link.includes('/undefined')) continue;
+    if (PURE_URL_RE.test(text)) continue;
 
     results.push({ postId, content: text, url: link || null, likes, engagements });
   }
@@ -40,8 +69,10 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body?.csv) return NextResponse.json({ error: 'csv field required' }, { status: 400 });
 
-  const rows = parseTsv(body.csv as string);
-  if (rows.length === 0) return NextResponse.json({ imported: 0 });
+  const rows = parseFile(body.csv as string);
+  if (rows.length === 0) {
+    return NextResponse.json({ imported: 0, error: 'No valid rows found. Make sure you are uploading the X Analytics tweet export file.' });
+  }
 
   const db = getDb();
   const col = db.collection('myContent');
