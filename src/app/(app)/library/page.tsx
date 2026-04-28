@@ -14,7 +14,6 @@ interface ContentItem {
   createdAt: string;
   likes: number;
   engagements: number;
-  topExample: boolean;
 }
 
 interface Decision {
@@ -26,17 +25,10 @@ interface Decision {
   createdAt: string;
 }
 
-async function getContentCount(): Promise<number> {
-  const db = getDb();
-  const snap = await db.collection('myContent').count().get();
-  return snap.data().count;
-}
-
 async function getContent(): Promise<ContentItem[]> {
   const db = getDb();
-  const snap = await db.collection('myContent').orderBy('createdAt', 'desc').limit(200).get();
-
-  const items = snap.docs.map((doc) => {
+  const snap = await db.collection('myContent').orderBy('createdAt', 'desc').limit(1000).get();
+  return snap.docs.map((doc) => {
     const d = doc.data();
     return {
       id: doc.id,
@@ -48,17 +40,8 @@ async function getContent(): Promise<ContentItem[]> {
       }) ?? '—',
       likes: (d.likes as number) ?? 0,
       engagements: (d.engagements as number) ?? 0,
-      topExample: false,
     };
   });
-
-  const sorted = [...items].sort(
-    (a, b) => (b.likes + b.engagements) - (a.likes + a.engagements)
-  );
-  const topIds = new Set(sorted.slice(0, 30).map((i) => i.id));
-  items.forEach((item) => { item.topExample = topIds.has(item.id); });
-
-  return items;
 }
 
 async function getDecisions(): Promise<Decision[]> {
@@ -91,21 +74,53 @@ const STATUS_STYLE = {
   rejected: { dot: 'bg-gray-300',  label: 'text-gray-400',  text: 'rejected' },
 };
 
+function ContentRow({ item }: { item: ContentItem }) {
+  const score = item.likes + item.engagements;
+  return (
+    <li className="flex items-start gap-3 p-4 border border-gray-100 rounded-xl hover:border-gray-200 transition-colors">
+      <span className={`mt-0.5 shrink-0 text-xs font-medium px-2 py-0.5 rounded-md ${TYPE_STYLE[item.type]}`}>
+        {item.type}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm text-[#2B2B2B] line-clamp-2">{item.content}</p>
+        {item.url && (
+          <a href={item.url} target="_blank" rel="noopener noreferrer"
+            className="text-xs text-gray-400 hover:text-amber-500 transition-colors truncate block mt-1">
+            {item.url}
+          </a>
+        )}
+        <div className="flex items-center gap-3 mt-1">
+          <p className="text-xs text-gray-300">{item.createdAt}</p>
+          {score > 0 && (
+            <p className="text-xs text-gray-400">
+              {item.likes > 0 && `${item.likes} likes`}
+              {item.likes > 0 && item.engagements > 0 && ' · '}
+              {item.engagements > 0 && `${item.engagements} eng`}
+            </p>
+          )}
+        </div>
+      </div>
+      <DeleteButton id={item.id} />
+    </li>
+  );
+}
+
 export default async function LibraryPage({
   searchParams,
 }: {
   searchParams: Promise<{ tab?: string }>;
 }) {
   const { tab } = await searchParams;
-  const activeTab = tab === 'decisions' ? 'decisions' : 'library';
+  const activeTab = tab === 'top30' ? 'top30' : tab === 'decisions' ? 'decisions' : 'all';
 
-  const [items, decisions, totalCount] = await Promise.all([
+  const [items, decisions] = await Promise.all([
     getContent(),
     getDecisions(),
-    getContentCount(),
   ]);
 
-  const topCount = items.filter((i) => i.topExample).length;
+  const top30 = [...items]
+    .sort((a, b) => (b.likes + b.engagements) - (a.likes + a.engagements))
+    .slice(0, 30);
 
   return (
     <div className="max-w-2xl">
@@ -121,13 +136,23 @@ export default async function LibraryPage({
         <Link
           href="/library"
           className={`px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-            activeTab === 'library'
+            activeTab === 'all'
               ? 'border-[#2B2B2B] text-[#2B2B2B]'
               : 'border-transparent text-gray-400 hover:text-[#2B2B2B]'
           }`}
         >
-          Library
-          <span className="ml-1.5 text-xs text-gray-300">{totalCount}</span>
+          All
+          <span className="ml-1.5 text-xs text-gray-300">{items.length}</span>
+        </Link>
+        <Link
+          href="/library?tab=top30"
+          className={`px-3 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+            activeTab === 'top30'
+              ? 'border-[#2B2B2B] text-[#2B2B2B]'
+              : 'border-transparent text-gray-400 hover:text-[#2B2B2B]'
+          }`}
+        >
+          Top 30
         </Link>
         <Link
           href="/library?tab=decisions"
@@ -142,64 +167,52 @@ export default async function LibraryPage({
         </Link>
       </div>
 
-      {activeTab === 'library' && (
+      {activeTab === 'all' && (
         <>
           <div className="flex flex-wrap gap-0">
             <AddContentForm />
             <ImportCsvButton />
           </div>
 
-          {items.length > 0 && topCount > 0 && (
-            <p className="text-xs text-gray-400 mb-4">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 mr-1.5 mb-0.5" />
-              {topCount} items are in the top 30 sent to the AI — sorted by engagement score.
-            </p>
-          )}
-
           {items.length === 0 ? (
             <p className="text-sm text-gray-300">No content yet — add your first item above.</p>
           ) : (
             <ul className="flex flex-col gap-2">
-              {items.map((item) => {
-                const score = item.likes + item.engagements;
-                return (
-                  <li
-                    key={item.id}
-                    className={`flex items-start gap-3 p-4 border rounded-xl transition-colors ${
-                      item.topExample
-                        ? 'border-amber-200 hover:border-amber-300'
-                        : 'border-gray-100 hover:border-gray-200'
-                    }`}
-                  >
-                    <span className={`mt-0.5 shrink-0 text-xs font-medium px-2 py-0.5 rounded-md ${TYPE_STYLE[item.type]}`}>
-                      {item.type}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-[#2B2B2B] line-clamp-2">{item.content}</p>
-                      {item.url && (
-                        <a href={item.url} target="_blank" rel="noopener noreferrer"
-                          className="text-xs text-gray-400 hover:text-amber-500 transition-colors truncate block mt-1">
-                          {item.url}
-                        </a>
+              {items.map((item) => <ContentRow key={item.id} item={item} />)}
+            </ul>
+          )}
+        </>
+      )}
+
+      {activeTab === 'top30' && (
+        <>
+          <p className="text-xs text-gray-400 mb-4">
+            These 30 items are sent to the AI on every reply generation, sorted by engagement score.
+          </p>
+          {top30.length === 0 ? (
+            <p className="text-sm text-gray-300">No content yet.</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {top30.map((item, i) => (
+                <li key={item.id} className="flex items-start gap-3 p-4 border border-amber-100 rounded-xl hover:border-amber-200 transition-colors">
+                  <span className="mt-0.5 shrink-0 text-xs font-medium text-amber-400 w-5 text-right">{i + 1}</span>
+                  <span className={`mt-0.5 shrink-0 text-xs font-medium px-2 py-0.5 rounded-md ${TYPE_STYLE[item.type]}`}>
+                    {item.type}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-[#2B2B2B] line-clamp-2">{item.content}</p>
+                    <div className="flex items-center gap-3 mt-1">
+                      <p className="text-xs text-gray-300">{item.createdAt}</p>
+                      {(item.likes + item.engagements) > 0 && (
+                        <p className="text-xs text-amber-500 font-medium">
+                          {item.likes + item.engagements} score
+                          {item.likes > 0 && ` · ${item.likes} likes`}
+                        </p>
                       )}
-                      <div className="flex items-center gap-3 mt-1">
-                        <p className="text-xs text-gray-300">{item.createdAt}</p>
-                        {score > 0 && (
-                          <p className="text-xs text-gray-400">
-                            {item.likes > 0 && `${item.likes} likes`}
-                            {item.likes > 0 && item.engagements > 0 && ' · '}
-                            {item.engagements > 0 && `${item.engagements} eng`}
-                          </p>
-                        )}
-                        {item.topExample && (
-                          <span className="text-xs text-amber-500 font-medium">top example</span>
-                        )}
-                      </div>
                     </div>
-                    <DeleteButton id={item.id} />
-                  </li>
-                );
-              })}
+                  </div>
+                </li>
+              ))}
             </ul>
           )}
         </>
@@ -215,26 +228,20 @@ export default async function LibraryPage({
                 const s = STATUS_STYLE[d.status];
                 return (
                   <div key={d.id} className="p-4 border border-gray-100 rounded-xl hover:border-gray-200 transition-colors">
-                    {/* Original tweet */}
                     {d.originalTweet && (
                       <p className="text-xs text-gray-400 line-clamp-2 mb-2">
                         <span className="font-medium text-gray-300">Tweet: </span>
                         {d.originalTweet}
                       </p>
                     )}
-
-                    {/* Generated / final reply */}
                     <p className={`text-sm mb-2 ${d.status === 'rejected' ? 'text-gray-400' : 'text-[#2B2B2B]'}`}>
                       {d.reply}
                     </p>
-
-                    {/* If edited, show what was originally generated */}
                     {d.status === 'edited' && d.originalReply && (
                       <p className="text-xs text-gray-300 line-clamp-1 mb-2">
                         <span className="font-medium">was: </span>{d.originalReply}
                       </p>
                     )}
-
                     <div className="flex items-center gap-2">
                       <span className={`inline-flex items-center gap-1 text-xs font-medium ${s.label}`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
