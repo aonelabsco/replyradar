@@ -96,7 +96,16 @@ function QuickPageInner() {
     ]);
   }
 
-  function handleReject() {
+  async function handleReject() {
+    await fetch('/api/approve-reply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        originalTweet: tweetText,
+        reply: generatedReply,
+        status: 'rejected',
+      }),
+    }).catch(() => {});
     setGeneratedReply('');
     setStage('idle');
   }

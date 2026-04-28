@@ -7,34 +7,37 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 });
 
-  const { originalTweet, reply, edited, originalReply } = body as {
+  const { originalTweet, reply, edited, originalReply, status } = body as {
     originalTweet?: string;
     reply?: string;
     edited?: boolean;
     originalReply?: string;
+    status?: 'approved' | 'edited' | 'rejected';
   };
 
   if (!reply?.trim()) return NextResponse.json({ error: 'reply is required' }, { status: 400 });
 
+  const resolvedStatus = status ?? (edited ? 'edited' : 'approved');
   const db = getDb();
   const now = FieldValue.serverTimestamp();
 
-  // Store in approvedReplies for history/display
   await db.collection('approvedReplies').add({
     originalTweet: originalTweet?.trim() ?? '',
     reply: reply.trim(),
-    edited: edited ?? false,
-    originalReply: edited ? (originalReply?.trim() ?? '') : null,
+    status: resolvedStatus,
+    originalReply: resolvedStatus === 'edited' ? (originalReply?.trim() ?? '') : null,
     createdAt: now,
   });
 
-  // Add the reply to myContent so future generations learn from it
-  await db.collection('myContent').add({
-    type: 'tweet',
-    content: reply.trim(),
-    url: null,
-    createdAt: now,
-  });
+  // Only learn from replies that were actually used (approved or edited)
+  if (resolvedStatus !== 'rejected') {
+    await db.collection('myContent').add({
+      type: 'tweet',
+      content: reply.trim(),
+      url: null,
+      createdAt: now,
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }
@@ -49,11 +52,12 @@ export async function GET() {
 
   const items = snap.docs.map((doc) => {
     const d = doc.data();
+    const status = (d.status as string) ?? (d.edited ? 'edited' : 'approved');
     return {
       id: doc.id,
       originalTweet: d.originalTweet as string,
       reply: d.reply as string,
-      edited: d.edited as boolean,
+      status,
       createdAt: d.createdAt?.toDate().toLocaleDateString('en-US', {
         month: 'short', day: 'numeric',
       }) ?? '—',
