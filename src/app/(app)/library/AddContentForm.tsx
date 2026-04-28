@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 export default function AddContentForm() {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<'tweet' | 'article'>('tweet');
-  const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -20,7 +19,7 @@ export default function AddContentForm() {
       const res = await fetch('/api/library', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type, content, url }),
+        body: JSON.stringify({ type, content }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -28,7 +27,6 @@ export default function AddContentForm() {
         return;
       }
       setContent('');
-      setUrl('');
       setType('tweet');
       setOpen(false);
       router.refresh();
@@ -72,14 +70,6 @@ export default function AddContentForm() {
           </button>
         ))}
       </div>
-
-      <input
-        type="url"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        placeholder="URL (optional)"
-        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent transition"
-      />
 
       <textarea
         value={content}

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
   let styleContext = 'No style examples available yet — use your natural voice.';
   try {
     const db = getDb();
-    const snap = await db.collection('myContent').orderBy('createdAt', 'desc').limit(30).get();
+    const snap = await db.collection('myContent').orderBy('createdAt', 'desc').limit(40).get();
     if (!snap.empty) {
       styleContext = snap.docs
         .map((doc) => {
@@ -37,20 +37,18 @@ export async function POST(request: NextRequest) {
 ${styleContext}
 
 ## Instructions
-Study the samples carefully — notice vocabulary choices, sentence length, punctuation habits, tone, use of humor or directness, and how the user typically engages. Then write a reply to the tweet provided that sounds authentically like them.
+Study the samples carefully — notice vocabulary choices, sentence length, punctuation habits, tone, use of humor or directness, and how the user typically engages. Then write ONE reply to the tweet provided that sounds authentically like them.
 
 Rules:
-- Match the user's voice exactly, not generic tweet style
-- Keep replies concise (under 280 characters unless the content genuinely requires more)
-- Be conversational and genuine — avoid corporate or formal language
-- Generate exactly 3 distinct reply options, separated by "---"
-- Do not number them or add labels
-- Do not add any explanation before or after the replies`;
+- Match the user's voice exactly — lowercase, punchy, direct, often witty or dry
+- Keep the reply concise (under 280 characters unless genuinely needed)
+- Be conversational and genuine — never corporate, never generic
+- Output ONLY the reply text. No explanation, no preamble, no quotes around it.`;
 
   try {
     const message = await client.messages.create({
       model: 'claude-opus-4-7',
-      max_tokens: 4096,
+      max_tokens: 512,
       system: [
         {
           type: 'text',
@@ -61,20 +59,15 @@ Rules:
       messages: [
         {
           role: 'user',
-          content: `Write 3 reply options for this tweet:\n\n${tweetText.trim()}`,
+          content: `Write a reply for this tweet:\n\n${tweetText.trim()}`,
         },
       ],
     });
 
     const textBlock = message.content.find((b) => b.type === 'text');
-    const raw = textBlock?.type === 'text' ? textBlock.text : '';
+    const reply = textBlock?.type === 'text' ? textBlock.text.trim() : '';
 
-    const replies = raw
-      .split('---')
-      .map((r) => r.trim())
-      .filter(Boolean);
-
-    return NextResponse.json({ replies });
+    return NextResponse.json({ reply });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('Claude API error:', message);
