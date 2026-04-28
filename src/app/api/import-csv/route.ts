@@ -9,6 +9,8 @@ interface CsvRow {
   postId: string;
   content: string;
   url: string | null;
+  likes: number;
+  engagements: number;
 }
 
 function parseTsv(raw: string): CsvRow[] {
@@ -17,19 +19,18 @@ function parseTsv(raw: string): CsvRow[] {
 
   for (let i = 1; i < lines.length; i++) {
     const cols = lines[i].split('\t');
-    if (cols.length < 4) continue;
+    if (cols.length < 7) continue;
 
     const postId = cols[0].trim();
     const text = cols[2].trim();
     const link = cols[3].trim();
+    const likes = parseInt(cols[5], 10) || 0;
+    const engagements = parseInt(cols[6], 10) || 0;
 
-    // Skip rows with no post id or malformed url (undefined)
     if (!postId || link.includes('/undefined')) continue;
-
-    // Skip empty or pure-URL-only content (media-only tweets)
     if (!text || PURE_URL_RE.test(text)) continue;
 
-    results.push({ postId, content: text, url: link || null });
+    results.push({ postId, content: text, url: link || null, likes, engagements });
   }
 
   return results;
@@ -40,12 +41,11 @@ export async function POST(request: NextRequest) {
   if (!body?.csv) return NextResponse.json({ error: 'csv field required' }, { status: 400 });
 
   const rows = parseTsv(body.csv as string);
-  if (rows.length === 0) return NextResponse.json({ imported: 0, skipped: 0 });
+  if (rows.length === 0) return NextResponse.json({ imported: 0 });
 
   const db = getDb();
   const col = db.collection('myContent');
 
-  // Use Post ID as doc ID — re-importing same CSV is idempotent
   let imported = 0;
   for (let i = 0; i < rows.length; i += 500) {
     const batch = db.batch();
@@ -56,6 +56,8 @@ export async function POST(request: NextRequest) {
           type: 'tweet',
           content: row.content,
           url: row.url,
+          likes: row.likes,
+          engagements: row.engagements,
           createdAt: FieldValue.serverTimestamp(),
         },
         { merge: false }
